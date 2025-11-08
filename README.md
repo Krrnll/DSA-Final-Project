@@ -1,2 +1,2 @@
 # DSA-Final-Project
-This program simulates different kinds of data structures and algorithm with the use of customtkinter that acts as the main GUI.
+The program demonstrates simulations of multiple data structures and algorithms, with CustomTkinter serving as the main GUI framework.
