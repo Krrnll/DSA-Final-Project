@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from typing import Optional, Tuple
+from typing import Optional
+from collections import deque
 
 # Try to import customtkinter, fallback to tkinter if not available
 try:
@@ -13,6 +14,29 @@ except ImportError:
     USE_CTK = False
     print("CustomTkinter not found. Using standard tkinter instead.")
     print("To install CustomTkinter, run: pip install customtkinter")
+
+
+# Constants
+CANVAS_WIDTH = 1000
+CANVAS_HEIGHT = 600
+NODE_RADIUS = 20
+X_SPACING = 40  # Reduced for narrower tree
+Y_SPACING = 60  # Reduced for more compact vertical spacing
+CANVAS_PADDING = 50
+HIGHLIGHT_DURATION = 2000  # milliseconds
+
+# Colors
+COLORS = {
+    "bg_dark": "#1a1a1a",
+    "bg_medium": "#212121",
+    "bg_light": "#25",
+    "node_fill": "#42a5f5",
+    "node_outline": "#1976d2",
+    "edge": "#64b5f6",
+    "highlight_fill": "#ff6b6b",
+    "highlight_outline": "#ff0000",
+    "text": "white"
+}
 
 
 class TreeNode:
@@ -36,10 +60,10 @@ class BinaryTree:
             self.root = TreeNode(value)
             return True
         
-        # Level-order insertion using queue
-        queue = [self.root]
+        # Level-order insertion using deque for better performance
+        queue = deque([self.root])
         while queue:
-            node = queue.pop(0)
+            node = queue.popleft()
             
             if node.left is None:
                 node.left = TreeNode(value)
@@ -62,10 +86,10 @@ class BinaryTree:
         deepest_node = None
         parent_of_deepest = None
         
-        # Find node to delete
-        queue = [(self.root, None)]
+        # Find node to delete using deque for better performance
+        queue = deque([(self.root, None)])
         while queue:
-            node, parent = queue.pop(0)
+            node, parent = queue.popleft()
             if node.value == value:
                 node_to_delete = node
             if node.left or node.right:
@@ -226,42 +250,87 @@ class TreeVisualizer:
         self.root.title("Binary Tree & BST Visualization")
         self.root.geometry("1200x800")
         if USE_CTK:
-            self.root.configure(bg="#1a1a1a")
+            self.root.configure(bg=COLORS["bg_dark"])
         else:
             self.root.configure(bg="gray20")
         
-        self.tree_type = "Binary Tree"  # or "Binary Search Tree"
+        self.tree_type = "Binary Tree"
         self.tree: BinaryTree = BinaryTree()
-        self.canvas_width = 1000
-        self.canvas_height = 600
         self.use_ctk = USE_CTK
+        self.current_traversal = ""  # Store current traversal for display
         
         self.setup_ui()
+        
+        # Bind mouse wheel for scrolling (will be bound after canvas is created)
+        self.root.after(100, self._bind_scroll_events)
+    
+    def _bind_scroll_events(self):
+        """Bind mouse wheel scrolling events"""
+        # Windows and Mac
+        self.canvas.bind("<MouseWheel>", self._on_mousewheel)
+        # Linux
+        self.canvas.bind("<Button-4>", self._on_mousewheel)
+        self.canvas.bind("<Button-5>", self._on_mousewheel)
+        # Also bind to canvas container for better scrolling
+        canvas_container = self.canvas.master
+        canvas_container.bind("<MouseWheel>", self._on_mousewheel)
+        canvas_container.bind("<Button-4>", self._on_mousewheel)
+        canvas_container.bind("<Button-5>", self._on_mousewheel)
+    
+    def _on_mousewheel(self, event):
+        """Handle mouse wheel scrolling"""
+        # Check if shift is held for horizontal scrolling
+        if event.state & 0x1:  # Shift key
+            if event.delta:
+                self.canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
+            else:
+                if event.num == 4:
+                    self.canvas.xview_scroll(-1, "units")
+                elif event.num == 5:
+                    self.canvas.xview_scroll(1, "units")
+        else:  # Vertical scrolling
+            if event.delta:
+                self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            else:
+                if event.num == 4:
+                    self.canvas.yview_scroll(-1, "units")
+                elif event.num == 5:
+                    self.canvas.yview_scroll(1, "units")
     
     def setup_ui(self):
         """Setup the user interface"""
-        # Main container
-        if self.use_ctk:
-            main_frame = ctk.CTkFrame(self.root)
-            main_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        else:
-            main_frame = tk.Frame(self.root, bg="gray20")
-            main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        main_frame = self._create_frame(self.root, fill="both", expand=True, padx=10, pady=10)
         
         # Control panel
-        if self.use_ctk:
-            control_frame = ctk.CTkFrame(main_frame)
-            control_frame.pack(fill="x", pady=(0, 10))
-        else:
-            control_frame = tk.Frame(main_frame, bg="gray25")
-            control_frame.pack(fill="x", pady=(0, 10))
+        control_frame = self._create_frame(main_frame, fill="x", pady=(0, 10), bg="gray25")
+        self._setup_control_panel(control_frame)
         
+        # Canvas frame
+        canvas_frame = self._create_frame(main_frame, fill="both", expand=True, bg="gray20")
+        self._setup_canvas(canvas_frame)
+        
+        # Information panel
+        info_frame = self._create_frame(main_frame, fill="x", pady=(10, 0), bg="gray25")
+        self._setup_info_panel(info_frame)
+    
+    def _create_frame(self, parent, **kwargs):
+        """Helper method to create frames (CTK or standard)"""
+        bg = kwargs.pop("bg", None)
+        if self.use_ctk and not bg:
+            frame = ctk.CTkFrame(parent)
+        else:
+            bg = bg or "gray20"
+            frame = tk.Frame(parent, bg=bg)
+        frame.pack(**kwargs)
+        return frame
+    
+    def _setup_control_panel(self, control_frame):
+        """Setup control panel with buttons and input"""
         # Tree type selection
+        self._create_label(control_frame, "Tree Type:", 0, 0)
+        
+        self.type_var = tk.StringVar(value="Binary Tree")
         if self.use_ctk:
-            type_label = ctk.CTkLabel(control_frame, text="Tree Type:", font=("Arial", 14))
-            type_label.grid(row=0, column=0, padx=10, pady=10)
-            
-            self.type_var = tk.StringVar(value="Binary Tree")
             type_menu = ctk.CTkOptionMenu(
                 control_frame,
                 values=["Binary Tree", "Binary Search Tree"],
@@ -269,137 +338,152 @@ class TreeVisualizer:
                 command=self.change_tree_type
             )
             type_menu.grid(row=0, column=1, padx=10, pady=10)
-            
-            # Input field
-            input_label = ctk.CTkLabel(control_frame, text="Value:", font=("Arial", 14))
-            input_label.grid(row=0, column=2, padx=10, pady=10)
-            
-            self.input_entry = ctk.CTkEntry(control_frame, width=100, font=("Arial", 14))
-            self.input_entry.grid(row=0, column=3, padx=10, pady=10)
-            self.input_entry.bind("<Return>", lambda e: self.insert_node())
-            
-            # Buttons
-            insert_btn = ctk.CTkButton(control_frame, text="Insert", command=self.insert_node, width=100, font=("Arial", 12))
-            insert_btn.grid(row=0, column=4, padx=5, pady=10)
-            
-            delete_btn = ctk.CTkButton(control_frame, text="Delete", command=self.delete_node, width=100, font=("Arial", 12))
-            delete_btn.grid(row=0, column=5, padx=5, pady=10)
-            
-            search_btn = ctk.CTkButton(control_frame, text="Search", command=self.search_node, width=100, font=("Arial", 12))
-            search_btn.grid(row=0, column=6, padx=5, pady=10)
-            
-            clear_btn = ctk.CTkButton(control_frame, text="Clear Tree", command=self.clear_tree, width=120, font=("Arial", 12), fg_color="red", hover_color="darkred")
-            clear_btn.grid(row=0, column=7, padx=5, pady=10)
         else:
-            type_label = tk.Label(control_frame, text="Tree Type:", font=("Arial", 12), bg="gray25", fg="white")
-            type_label.grid(row=0, column=0, padx=10, pady=10)
-            
-            self.type_var = tk.StringVar(value="Binary Tree")
-            type_menu = ttk.Combobox(control_frame, textvariable=self.type_var, values=["Binary Tree", "Binary Search Tree"], state="readonly", width=18)
+            type_menu = ttk.Combobox(
+                control_frame,
+                textvariable=self.type_var,
+                values=["Binary Tree", "Binary Search Tree"],
+                state="readonly",
+                width=18
+            )
             type_menu.grid(row=0, column=1, padx=10, pady=10)
             type_menu.bind("<<ComboboxSelected>>", lambda e: self.change_tree_type(self.type_var.get()))
-            
-            input_label = tk.Label(control_frame, text="Value:", font=("Arial", 12), bg="gray25", fg="white")
-            input_label.grid(row=0, column=2, padx=10, pady=10)
-            
-            self.input_entry = tk.Entry(control_frame, width=12, font=("Arial", 12))
-            self.input_entry.grid(row=0, column=3, padx=10, pady=10)
-            self.input_entry.bind("<Return>", lambda e: self.insert_node())
-            
-            insert_btn = tk.Button(control_frame, text="Insert", command=self.insert_node, width=10, font=("Arial", 10), bg="#4CAF50", fg="white", relief=tk.RAISED)
-            insert_btn.grid(row=0, column=4, padx=5, pady=10)
-            
-            delete_btn = tk.Button(control_frame, text="Delete", command=self.delete_node, width=10, font=("Arial", 10), bg="#f44336", fg="white", relief=tk.RAISED)
-            delete_btn.grid(row=0, column=5, padx=5, pady=10)
-            
-            search_btn = tk.Button(control_frame, text="Search", command=self.search_node, width=10, font=("Arial", 10), bg="#2196F3", fg="white", relief=tk.RAISED)
-            search_btn.grid(row=0, column=6, padx=5, pady=10)
-            
-            clear_btn = tk.Button(control_frame, text="Clear Tree", command=self.clear_tree, width=12, font=("Arial", 10), bg="#d32f2f", fg="white", relief=tk.RAISED)
-            clear_btn.grid(row=0, column=7, padx=5, pady=10)
         
-        # Canvas for drawing tree with scrollbars
+        # Input field
+        self._create_label(control_frame, "Value:", 0, 2)
+        
         if self.use_ctk:
-            canvas_frame = ctk.CTkFrame(main_frame)
-            canvas_frame.pack(fill="both", expand=True)
+            self.input_entry = ctk.CTkEntry(control_frame, width=100, font=("Arial", 14))
         else:
-            canvas_frame = tk.Frame(main_frame, bg="gray20")
-            canvas_frame.pack(fill="both", expand=True)
+            self.input_entry = tk.Entry(control_frame, width=12, font=("Arial", 12))
+        self.input_entry.grid(row=0, column=3, padx=10, pady=10)
+        self.input_entry.bind("<Return>", lambda e: self.insert_node())
         
-        # Create a frame for canvas and scrollbars
-        canvas_container = tk.Frame(canvas_frame, bg="#212121" if not self.use_ctk else None)
+        # Buttons
+        button_configs = [
+            ("Insert", self.insert_node, "#4CAF50", 4),
+            ("Delete", self.delete_node, "#f44336", 5),
+            ("Search", self.search_node, "#2196F3", 6),
+            ("Bulk Insert", self.bulk_insert, "#9C27B0", 7),
+            ("Clear Tree", self.clear_tree, "#d32f2f", 8)
+        ]
+        
+        for text, command, color, col in button_configs:
+            if self.use_ctk:
+                btn = ctk.CTkButton(
+                    control_frame,
+                    text=text,
+                    command=command,
+                    width=100 if text != "Clear Tree" else 120,
+                    font=("Arial", 12),
+                    fg_color=color if text == "Clear Tree" else None,
+                    hover_color="darkred" if text == "Clear Tree" else None
+                )
+            else:
+                btn = tk.Button(
+                    control_frame,
+                    text=text,
+                    command=command,
+                    width=10 if text != "Clear Tree" else 12,
+                    font=("Arial", 10),
+                    bg=color,
+                    fg="white",
+                    relief=tk.RAISED
+                )
+            btn.grid(row=0, column=col, padx=5, pady=10)
+    
+    def _create_label(self, parent, text, row, col, font_size=14):
+        """Helper to create labels"""
+        if self.use_ctk:
+            label = ctk.CTkLabel(parent, text=text, font=("Arial", font_size))
+        else:
+            label = tk.Label(parent, text=text, font=("Arial", font_size-2), bg="gray25", fg="white")
+        label.grid(row=row, column=col, padx=10, pady=10)
+    
+    def _setup_canvas(self, canvas_frame):
+        """Setup canvas with scrollbars"""
+        canvas_container = tk.Frame(canvas_frame, bg=COLORS["bg_medium"])
         canvas_container.pack(fill="both", expand=True, padx=10, pady=10)
         
-        # Create canvas with scrollable region
+        # Create canvas
         self.canvas = tk.Canvas(
-            canvas_container, 
-            width=self.canvas_width, 
-            height=self.canvas_height, 
-            bg="#212121", 
-            highlightthickness=0
+            canvas_container,
+            width=CANVAS_WIDTH,
+            height=CANVAS_HEIGHT,
+            bg=COLORS["bg_medium"],
+            highlightthickness=0,
+            scrollregion=(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
         )
         
-        # Scrollbars
+        # Create scrollbars
         if self.use_ctk:
-            scrollbar_y = ctk.CTkScrollbar(canvas_container, orientation="vertical", command=self.canvas.yview)
-            scrollbar_x = ctk.CTkScrollbar(canvas_container, orientation="horizontal", command=self.canvas.xview)
-            self.canvas.configure(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
-            
-            # Grid layout for canvas and scrollbars
-            self.canvas.grid(row=0, column=0, sticky="nsew")
-            scrollbar_y.grid(row=0, column=1, sticky="ns")
-            scrollbar_x.grid(row=1, column=0, sticky="ew")
-            canvas_container.grid_rowconfigure(0, weight=1)
-            canvas_container.grid_columnconfigure(0, weight=1)
+            self.scrollbar_y = ctk.CTkScrollbar(canvas_container, orientation="vertical", command=self.canvas.yview)
+            self.scrollbar_x = ctk.CTkScrollbar(canvas_container, orientation="horizontal", command=self.canvas.xview)
         else:
-            scrollbar_y = tk.Scrollbar(canvas_container, orient="vertical", command=self.canvas.yview)
-            scrollbar_x = tk.Scrollbar(canvas_container, orient="horizontal", command=self.canvas.xview)
-            self.canvas.configure(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
-            
-            # Grid layout for canvas and scrollbars
-            self.canvas.grid(row=0, column=0, sticky="nsew")
-            scrollbar_y.grid(row=0, column=1, sticky="ns")
-            scrollbar_x.grid(row=1, column=0, sticky="ew")
-            canvas_container.grid_rowconfigure(0, weight=1)
-            canvas_container.grid_columnconfigure(0, weight=1)
+            self.scrollbar_y = tk.Scrollbar(canvas_container, orient="vertical", command=self.canvas.yview)
+            self.scrollbar_x = tk.Scrollbar(canvas_container, orient="horizontal", command=self.canvas.xview)
         
-        # Information panel
+        self.canvas.configure(yscrollcommand=self.scrollbar_y.set, xscrollcommand=self.scrollbar_x.set)
+        
+        # Make canvas focusable for keyboard scrolling
+        self.canvas.focus_set()
+        
+        # Grid layout
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.scrollbar_y.grid(row=0, column=1, sticky="ns")
+        self.scrollbar_x.grid(row=1, column=0, sticky="ew")
+        canvas_container.grid_rowconfigure(0, weight=1)
+        canvas_container.grid_columnconfigure(0, weight=1)
+    
+    def _setup_info_panel(self, info_frame):
+        """Setup information and traversal panel"""
         if self.use_ctk:
-            info_frame = ctk.CTkFrame(main_frame)
-            info_frame.pack(fill="x", pady=(10, 0))
-            
-            self.info_label = ctk.CTkLabel(info_frame, text="Tree Information: No nodes", font=("Arial", 12), anchor="w")
+            self.info_label = ctk.CTkLabel(
+                info_frame,
+                text="Tree Information: No nodes",
+                font=("Arial", 12),
+                anchor="w"
+            )
             self.info_label.pack(side="left", padx=10, pady=10)
             
             traversal_frame = ctk.CTkFrame(info_frame)
             traversal_frame.pack(side="right", padx=10, pady=10)
-            
-            inorder_btn = ctk.CTkButton(traversal_frame, text="Inorder", command=lambda: self.show_traversal("Inorder"), width=80, font=("Arial", 10))
-            inorder_btn.pack(side="left", padx=2)
-            
-            preorder_btn = ctk.CTkButton(traversal_frame, text="Preorder", command=lambda: self.show_traversal("Preorder"), width=80, font=("Arial", 10))
-            preorder_btn.pack(side="left", padx=2)
-            
-            postorder_btn = ctk.CTkButton(traversal_frame, text="Postorder", command=lambda: self.show_traversal("Postorder"), width=80, font=("Arial", 10))
-            postorder_btn.pack(side="left", padx=2)
         else:
-            info_frame = tk.Frame(main_frame, bg="gray25")
-            info_frame.pack(fill="x", pady=(10, 0))
-            
-            self.info_label = tk.Label(info_frame, text="Tree Information: No nodes", font=("Arial", 11), anchor="w", bg="gray25", fg="white")
+            self.info_label = tk.Label(
+                info_frame,
+                text="Tree Information: No nodes",
+                font=("Arial", 11),
+                anchor="w",
+                bg="gray25",
+                fg="white"
+            )
             self.info_label.pack(side="left", padx=10, pady=10)
             
             traversal_frame = tk.Frame(info_frame, bg="gray25")
             traversal_frame.pack(side="right", padx=10, pady=10)
-            
-            inorder_btn = tk.Button(traversal_frame, text="Inorder", command=lambda: self.show_traversal("Inorder"), width=10, font=("Arial", 9), bg="#607D8B", fg="white", relief=tk.RAISED)
-            inorder_btn.pack(side="left", padx=2)
-            
-            preorder_btn = tk.Button(traversal_frame, text="Preorder", command=lambda: self.show_traversal("Preorder"), width=10, font=("Arial", 9), bg="#607D8B", fg="white", relief=tk.RAISED)
-            preorder_btn.pack(side="left", padx=2)
-            
-            postorder_btn = tk.Button(traversal_frame, text="Postorder", command=lambda: self.show_traversal("Postorder"), width=10, font=("Arial", 9), bg="#607D8B", fg="white", relief=tk.RAISED)
-            postorder_btn.pack(side="left", padx=2)
+        
+        # Traversal buttons
+        for traversal_type in ["Inorder", "Preorder", "Postorder"]:
+            if self.use_ctk:
+                btn = ctk.CTkButton(
+                    traversal_frame,
+                    text=traversal_type,
+                    command=lambda t=traversal_type: self.show_traversal(t),
+                    width=80,
+                    font=("Arial", 10)
+                )
+            else:
+                btn = tk.Button(
+                    traversal_frame,
+                    text=traversal_type,
+                    command=lambda t=traversal_type: self.show_traversal(t),
+                    width=10,
+                    font=("Arial", 9),
+                    bg="#607D8B",
+                    fg="white",
+                    relief=tk.RAISED
+                )
+            btn.pack(side="left", padx=2)
     
     def change_tree_type(self, choice: str):
         """Change between Binary Tree and BST"""
@@ -408,8 +492,8 @@ class TreeVisualizer:
             self.tree = BinarySearchTree()
         else:
             self.tree = BinaryTree()
+        self.current_traversal = ""
         self.update_display()
-        messagebox.showinfo("Tree Type Changed", f"Switched to {choice}")
     
     def insert_node(self):
         """Insert a node into the tree"""
@@ -419,9 +503,63 @@ class TreeVisualizer:
                 self.update_display()
                 self.input_entry.delete(0, tk.END)
             else:
-                messagebox.showwarning("Insert Failed", f"Could not insert {value}")
+                messagebox.showwarning("Insert Failed", f"Could not insert {value} (may already exist in BST)")
         except ValueError:
             messagebox.showerror("Invalid Input", "Please enter a valid integer")
+    
+    def bulk_insert(self):
+        """Insert multiple values separated by spaces or commas"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Bulk Insert")
+        dialog.geometry("400x150")
+        if self.use_ctk:
+            dialog.configure(bg=COLORS["bg_dark"])
+        else:
+            dialog.configure(bg="gray25")
+        
+        label_text = "Enter values (space or comma separated):"
+        if self.use_ctk:
+            label = ctk.CTkLabel(dialog, text=label_text, font=("Arial", 12))
+            label.pack(pady=10)
+            entry = ctk.CTkEntry(dialog, width=300, font=("Arial", 12))
+        else:
+            label = tk.Label(dialog, text=label_text, font=("Arial", 11), bg="gray25", fg="white")
+            label.pack(pady=10)
+            entry = tk.Entry(dialog, width=40, font=("Arial", 11))
+        entry.pack(pady=10)
+        entry.focus()
+        
+        def do_insert():
+            try:
+                text = entry.get()
+                # Split by comma or space
+                values = [int(v.strip()) for v in text.replace(",", " ").split() if v.strip()]
+                if not values:
+                    messagebox.showwarning("No Values", "Please enter at least one value")
+                    return
+                
+                inserted = 0
+                for value in values:
+                    if self.tree.insert(value):
+                        inserted += 1
+                
+                dialog.destroy()
+                self.update_display()
+                if inserted < len(values):
+                    messagebox.showinfo("Bulk Insert Complete", 
+                                      f"Inserted {inserted} out of {len(values)} values")
+                else:
+                    messagebox.showinfo("Bulk Insert Complete", 
+                                      f"Successfully inserted {inserted} values")
+            except ValueError:
+                messagebox.showerror("Invalid Input", "Please enter only integers separated by spaces or commas")
+        
+        if self.use_ctk:
+            btn = ctk.CTkButton(dialog, text="Insert", command=do_insert)
+        else:
+            btn = tk.Button(dialog, text="Insert", command=do_insert, bg="#4CAF50", fg="white")
+        btn.pack(pady=10)
+        entry.bind("<Return>", lambda e: do_insert())
     
     def delete_node(self):
         """Delete a node from the tree"""
@@ -454,28 +592,29 @@ class TreeVisualizer:
                 self.tree = BinarySearchTree()
             else:
                 self.tree = BinaryTree()
+            self.current_traversal = ""
             self.update_display()
     
     def highlight_node(self, value: int):
         """Highlight a specific node during search"""
         self.update_display()
-        # Find and highlight the node
         self._highlight_recursive(self.tree.root, value)
-        self.root.after(2000, self.update_display)  # Remove highlight after 2 seconds
+        self.root.after(HIGHLIGHT_DURATION, self.update_display)
     
     def _highlight_recursive(self, node: Optional[TreeNode], value: int):
         """Recursively find and highlight node"""
         if node is None:
             return
         if node.value == value:
-            # Draw highlighted circle
             x, y = node.x, node.y
-            radius = 25
             self.canvas.create_oval(
-                x - radius, y - radius, x + radius, y + radius,
-                fill="#ff6b6b", outline="#ff0000", width=3
+                x - NODE_RADIUS, y - NODE_RADIUS,
+                x + NODE_RADIUS, y + NODE_RADIUS,
+                fill=COLORS["highlight_fill"],
+                outline=COLORS["highlight_outline"],
+                width=3
             )
-            self.canvas.create_text(x, y, text=str(value), font=("Arial", 14, "bold"), fill="white")
+            self.canvas.create_text(x, y, text=str(value), font=("Arial", 14, "bold"), fill=COLORS["text"])
         else:
             if self.tree_type == "Binary Search Tree":
                 if value < node.value:
@@ -490,6 +629,7 @@ class TreeVisualizer:
         """Show tree traversal result"""
         if self.tree.root is None:
             messagebox.showinfo("Empty Tree", "Tree is empty")
+            self.current_traversal = ""
             return
         
         if traversal_type == "Inorder":
@@ -499,15 +639,19 @@ class TreeVisualizer:
         else:  # Postorder
             result = self.tree.postorder_traversal()
         
-        traversal_str = " → ".join(map(str, result))
-        messagebox.showinfo(f"{traversal_type} Traversal", traversal_str)
+        self.current_traversal = f"{traversal_type}: " + " → ".join(map(str, result))
+        self.update_display()
+        messagebox.showinfo(f"{traversal_type} Traversal", " → ".join(map(str, result)))
     
     def update_display(self):
         """Update the tree visualization"""
         self.canvas.delete("all")
         
         if self.tree.root is None:
-            self.info_label.configure(text="Tree Information: No nodes")
+            info_text = "Tree Information: No nodes"
+            if self.current_traversal:
+                info_text += f" | {self.current_traversal}"
+            self.info_label.configure(text=info_text)
             return
         
         # Calculate positions for all nodes
@@ -523,38 +667,31 @@ class TreeVisualizer:
         height = self.tree.get_height()
         node_count = self._count_nodes(self.tree.root)
         info_text = f"Tree Type: {self.tree_type} | Nodes: {node_count} | Height: {height}"
-        if self.use_ctk:
-            self.info_label.configure(text=info_text)
-        else:
-            self.info_label.configure(text=info_text)
+        if self.current_traversal:
+            info_text += f" | {self.current_traversal}"
+        self.info_label.configure(text=info_text)
         
         # Update scroll region with padding
         bbox = self.canvas.bbox("all")
         if bbox:
-            # Add padding around the tree
-            padding = 100
-            scroll_left = bbox[0] - padding
-            scroll_top = bbox[1] - padding
-            scroll_right = bbox[2] + padding
-            scroll_bottom = bbox[3] + padding
-            
-            # Ensure minimum scroll region size
-            scroll_right = max(scroll_right, self.canvas_width)
-            scroll_bottom = max(scroll_bottom, self.canvas_height)
-            
+            scroll_left = bbox[0] - CANVAS_PADDING
+            scroll_top = bbox[1] - CANVAS_PADDING
+            scroll_right = max(bbox[2] + CANVAS_PADDING, CANVAS_WIDTH)
+            scroll_bottom = max(bbox[3] + CANVAS_PADDING, CANVAS_HEIGHT)
+            # Ensure scroll region is at least as large as canvas
+            scroll_right = max(scroll_right, CANVAS_WIDTH)
+            scroll_bottom = max(scroll_bottom, CANVAS_HEIGHT)
             self.canvas.configure(scrollregion=(scroll_left, scroll_top, scroll_right, scroll_bottom))
         else:
-            # Default scroll region if no items
-            self.canvas.configure(scrollregion=(0, 0, self.canvas_width, self.canvas_height))
+            self.canvas.configure(scrollregion=(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT))
+        
+        # Update scrollbars visibility
+        self._update_scrollbars()
     
     def _calculate_positions(self):
         """Calculate x, y positions for all nodes using recursive algorithm with centering"""
         if self.tree.root is None:
             return
-        
-        # More compact spacing for a slimmer tree
-        x_spacing = 60
-        y_spacing = 80
         
         def position_node(node, x, y, level):
             """Recursively position nodes"""
@@ -564,32 +701,24 @@ class TreeVisualizer:
             node.x = x
             node.y = y
             
-            # Calculate positions for children
             if node.left is not None or node.right is not None:
-                # Calculate subtree widths
-                left_width = self._calculate_subtree_width(node.left, x_spacing)
-                right_width = self._calculate_subtree_width(node.right, x_spacing)
+                left_width = self._calculate_subtree_width(node.left, X_SPACING)
+                right_width = self._calculate_subtree_width(node.right, X_SPACING)
                 
-                # Position left child
                 if node.left:
-                    left_x = x - (right_width + x_spacing / 2)
-                    position_node(node.left, left_x, y + y_spacing, level + 1)
+                    left_x = x - (right_width + X_SPACING / 2)
+                    position_node(node.left, left_x, y + Y_SPACING, level + 1)
                 
-                # Position right child
                 if node.right:
-                    right_x = x + (left_width + x_spacing / 2)
-                    position_node(node.right, right_x, y + y_spacing, level + 1)
+                    right_x = x + (left_width + X_SPACING / 2)
+                    position_node(node.right, right_x, y + Y_SPACING, level + 1)
         
         # First pass: calculate positions relative to root at (0, 0)
-        temp_root_x = 0
-        temp_root_y = 0
-        position_node(self.tree.root, temp_root_x, temp_root_y, 0)
+        position_node(self.tree.root, 0, 0, 0)
         
-        # Calculate actual bounds of the tree
-        min_x = float('inf')
-        max_x = float('-inf')
-        min_y = float('inf')
-        max_y = float('-inf')
+        # Find bounds
+        min_x = min_y = float('inf')
+        max_x = max_y = float('-inf')
         
         def find_bounds(node):
             nonlocal min_x, max_x, min_y, max_y
@@ -604,15 +733,20 @@ class TreeVisualizer:
         
         find_bounds(self.tree.root)
         
-        # Calculate center offset to center the tree
+        # Center the tree both horizontally and vertically
         tree_width = max_x - min_x if max_x > min_x else 0
         tree_height = max_y - min_y if max_y > min_y else 0
         
-        # Center the tree in the canvas
-        center_offset_x = (self.canvas_width - tree_width) / 2 - min_x
-        center_offset_y = 50 - min_y  # Start 50 pixels from top
+        # Get actual canvas dimensions for proper centering in fullscreen
+        canvas_width = self.canvas.winfo_width() if self.canvas.winfo_width() > 1 else CANVAS_WIDTH
+        canvas_height = self.canvas.winfo_height() if self.canvas.winfo_height() > 1 else CANVAS_HEIGHT
         
-        # Second pass: adjust all positions to center the tree
+        # Center horizontally
+        center_offset_x = (canvas_width - tree_width) / 2 - min_x
+        # Center vertically, moved up more for better positioning
+        center_offset_y = (canvas_height - tree_height) / 3 - min_y
+        
+        # Second pass: adjust positions
         def adjust_positions(node):
             if node is None:
                 return
@@ -644,14 +778,14 @@ class TreeVisualizer:
         if node.left:
             self.canvas.create_line(
                 node.x, node.y, node.left.x, node.left.y,
-                fill="#64b5f6", width=2
+                fill=COLORS["edge"], width=2
             )
             self._draw_edges(node.left)
         
         if node.right:
             self.canvas.create_line(
                 node.x, node.y, node.right.x, node.right.y,
-                fill="#64b5f6", width=2
+                fill=COLORS["edge"], width=2
             )
             self._draw_edges(node.right)
     
@@ -661,11 +795,12 @@ class TreeVisualizer:
             return
         
         # Draw circle
-        radius = 25
         self.canvas.create_oval(
-            node.x - radius, node.y - radius,
-            node.x + radius, node.y + radius,
-            fill="#42a5f5", outline="#1976d2", width=2
+            node.x - NODE_RADIUS, node.y - NODE_RADIUS,
+            node.x + NODE_RADIUS, node.y + NODE_RADIUS,
+            fill=COLORS["node_fill"],
+            outline=COLORS["node_outline"],
+            width=2
         )
         
         # Draw value text
@@ -673,12 +808,33 @@ class TreeVisualizer:
             node.x, node.y,
             text=str(node.value),
             font=("Arial", 12, "bold"),
-            fill="white"
+            fill=COLORS["text"]
         )
         
         # Draw children recursively
         self._draw_nodes(node.left)
         self._draw_nodes(node.right)
+    
+    def _update_scrollbars(self):
+        """Update scrollbar visibility based on content size"""
+        bbox = self.canvas.bbox("all")
+        if bbox:
+            content_width = bbox[2] - bbox[0]
+            content_height = bbox[3] - bbox[1]
+            
+            # Show/hide scrollbars based on content size
+            if content_width > CANVAS_WIDTH:
+                self.scrollbar_x.grid(row=1, column=0, sticky="ew")
+            else:
+                self.scrollbar_x.grid_remove()
+            
+            if content_height > CANVAS_HEIGHT:
+                self.scrollbar_y.grid(row=0, column=1, sticky="ns")
+            else:
+                self.scrollbar_y.grid_remove()
+        else:
+            self.scrollbar_x.grid_remove()
+            self.scrollbar_y.grid_remove()
     
     def _count_nodes(self, node: Optional[TreeNode]) -> int:
         """Count total number of nodes"""
