@@ -70,7 +70,7 @@ class BinaryTree:
                 return True
             elif node.right is None:
                 node.right = TreeNode(value)
-                return True
+                return 
             else:
                 queue.append(node.left)
                 queue.append(node.right)
