@@ -77,7 +77,7 @@ python .\recursion\hanoi.py
 
 ## Using the App
 1. Open the app and use the dropdown to choose a module.
-2. Click “🚀 Launch”.
+2. Click Launch.
 3. Each module opens in its own window with controls.
 
 ### Modules
