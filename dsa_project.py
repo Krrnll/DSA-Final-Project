@@ -2,6 +2,9 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Optional
 from collections import deque
+import sys
+import os
+import importlib.util
 
 # Try to import customtkinter, fallback to tkinter if not available
 try:
@@ -25,17 +28,22 @@ Y_SPACING = 60  # Reduced for more compact vertical spacing
 CANVAS_PADDING = 50
 HIGHLIGHT_DURATION = 2000  # milliseconds
 
-# Colors
+# Colors - Professional Dark Theme
 COLORS = {
-    "bg_dark": "#1a1a1a",
-    "bg_medium": "#212121",
-    "bg_light": "#25",
-    "node_fill": "#42a5f5",
-    "node_outline": "#1976d2",
-    "edge": "#64b5f6",
-    "highlight_fill": "#ff6b6b",
-    "highlight_outline": "#ff0000",
-    "text": "white"
+    "bg_dark": "#121212",        # Base dark background (avoid pure black)
+    "bg_medium": "#1E1E1E",      # Elevated surface
+    "bg_light": "#2A2A2A",       # Further elevated surface
+    "text_primary": "#E0E0E0",   # High emphasis text (off-white)
+    "text_secondary": "#B0B0B0", # Secondary text (60% opacity equivalent)
+    "node_fill": "#42A5F5",      # Primary blue for nodes
+    "node_outline": "#1E88E5",   # Darker blue outline
+    "edge": "#64B5F6",           # Soft blue for edges
+    "highlight_fill": "#FF6B6B", # Muted red for highlights
+    "highlight_outline": "#FF5252",
+    "accent_primary": "#BB86FC", # Purple accent for primary actions
+    "accent_secondary": "#FFD700",# Gold for secondary highlights
+    "success": "#4CAF50",        # Green for success states
+    "text": "#E0E0E0"            # Default text color
 }
 
 
@@ -70,7 +78,7 @@ class BinaryTree:
                 return True
             elif node.right is None:
                 node.right = TreeNode(value)
-                return 
+                return True
             else:
                 queue.append(node.left)
                 queue.append(node.right)
@@ -136,36 +144,62 @@ class BinaryTree:
         return 1 + max(self.get_height(node.left), self.get_height(node.right))
     
     def inorder_traversal(self, node: Optional[TreeNode] = None) -> list:
-        """Inorder traversal"""
-        if node is None:
-            node = self.root
+        """Inorder traversal (iterative to avoid stack overflow)"""
+        if self.root is None:
+            return []
+        
         result = []
-        if node:
-            result.extend(self.inorder_traversal(node.left))
-            result.append(node.value)
-            result.extend(self.inorder_traversal(node.right))
+        stack = []
+        current = self.root
+        
+        while current or stack:
+            while current:
+                stack.append(current)
+                current = current.left
+            current = stack.pop()
+            result.append(current.value)
+            current = current.right
+        
         return result
     
     def preorder_traversal(self, node: Optional[TreeNode] = None) -> list:
-        """Preorder traversal"""
-        if node is None:
-            node = self.root
+        """Preorder traversal (iterative to avoid stack overflow)"""
+        if self.root is None:
+            return []
+        
         result = []
-        if node:
-            result.append(node.value)
-            result.extend(self.preorder_traversal(node.left))
-            result.extend(self.preorder_traversal(node.right))
+        stack = [self.root]
+        
+        while stack:
+            current = stack.pop()
+            result.append(current.value)
+            if current.right:
+                stack.append(current.right)
+            if current.left:
+                stack.append(current.left)
+        
         return result
     
     def postorder_traversal(self, node: Optional[TreeNode] = None) -> list:
-        """Postorder traversal"""
-        if node is None:
-            node = self.root
+        """Postorder traversal (iterative to avoid stack overflow)"""
+        if self.root is None:
+            return []
+        
         result = []
-        if node:
-            result.extend(self.postorder_traversal(node.left))
-            result.extend(self.postorder_traversal(node.right))
-            result.append(node.value)
+        stack1 = [self.root]
+        stack2 = []
+        
+        while stack1:
+            current = stack1.pop()
+            stack2.append(current)
+            if current.left:
+                stack1.append(current.left)
+            if current.right:
+                stack1.append(current.right)
+        
+        while stack2:
+            result.append(stack2.pop().value)
+        
         return result
 
 
@@ -261,8 +295,11 @@ class TreeVisualizer:
         
         self.setup_ui()
         
+        # Initial display update
+        self.root.after(100, self.update_display)
+        
         # Bind mouse wheel for scrolling (will be bound after canvas is created)
-        self.root.after(100, self._bind_scroll_events)
+        self.root.after(200, self._bind_scroll_events)
     
     def _bind_scroll_events(self):
         """Bind mouse wheel scrolling events"""
@@ -300,6 +337,16 @@ class TreeVisualizer:
     def setup_ui(self):
         """Setup the user interface"""
         main_frame = self._create_frame(self.root, fill="both", expand=True, padx=10, pady=10)
+        
+        # Traversal Output Panel (always visible at top)
+        traversal_panel = self._create_frame(main_frame, fill="x", pady=(0, 10), bg="gray25")
+        tk.Label(traversal_panel, text="Traversal Results (TLR/Preorder | LTR/Inorder | LRT/Postorder):", 
+                font=("Arial", 10, "bold"), bg="gray25", fg="white").pack(anchor="w", padx=10, pady=(10, 5))
+        
+        self.traversal_text = tk.Text(traversal_panel, height=3, bg=COLORS["bg_medium"], 
+                                      fg=COLORS["text"], font=("Courier", 9), relief=tk.FLAT)
+        self.traversal_text.pack(fill="x", padx=10, pady=5)
+        self.traversal_text.config(state=tk.DISABLED)
         
         # Control panel
         control_frame = self._create_frame(main_frame, fill="x", pady=(0, 10), bg="gray25")
@@ -663,6 +710,25 @@ class TreeVisualizer:
         # Draw nodes
         self._draw_nodes(self.tree.root)
         
+        # Update traversal display with all three traversals
+        if hasattr(self, 'traversal_text'):
+            self.traversal_text.config(state=tk.NORMAL)
+            self.traversal_text.delete(1.0, tk.END)
+            
+            if self.tree.root is not None:
+                preorder = self.tree.preorder_traversal()
+                inorder = self.tree.inorder_traversal()
+                postorder = self.tree.postorder_traversal()
+                
+                traversal_output = (
+                    f"TLR (Preorder):    {' → '.join(map(str, preorder))}\n"
+                    f"LTR (Inorder):     {' → '.join(map(str, inorder))}\n"
+                    f"LRT (Postorder):   {' → '.join(map(str, postorder))}"
+                )
+                self.traversal_text.insert(tk.END, traversal_output)
+            
+            self.traversal_text.config(state=tk.DISABLED)
+        
         # Update info label
         height = self.tree.get_height()
         node_count = self._count_nodes(self.tree.root)
@@ -843,13 +909,416 @@ class TreeVisualizer:
         return 1 + self._count_nodes(node.left) + self._count_nodes(node.right)
 
 
+class DSAMainMenu:
+    """Main menu for selecting different DSA visualizers"""
+    
+    def __init__(self, root):
+        self.root = root
+        self.root.title("DSA Visualization Suite")
+        self.root.geometry("1400x900")
+        self.root.configure(bg=COLORS["bg_dark"])
+        
+        self.module_window = None
+        self.setup_main_menu()
+    
+    def setup_main_menu(self):
+        """Setup the main menu interface"""
+        main_frame = tk.Frame(self.root, bg=COLORS["bg_dark"])
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Title
+        if USE_CTK:
+            title = ctk.CTkLabel(
+                main_frame,
+                text="Data Structures and Algorithms",
+                font=("Arial", 40, "bold"),
+                text_color=COLORS["accent_primary"]
+            )
+        else:
+            title = tk.Label(
+                main_frame,
+                text="Data Structures and Algorithms",
+                font=("Arial", 40, "bold"),
+                bg=COLORS["bg_dark"],
+                fg=COLORS["accent_primary"]
+            )
+        title.pack(pady=20)
+        
+        # Subtitle
+        subtitle = tk.Label(
+            main_frame,
+            text="Interactive Visualization & Learning Suite",
+            font=("Arial", 15, "italic"),
+            bg=COLORS["bg_dark"],
+            fg=COLORS["text_secondary"]
+        )
+        subtitle.pack(pady=8)
+        
+        # Group Members Info with enhanced styling
+        group_frame = tk.Frame(main_frame, bg=COLORS["bg_medium"], relief=tk.RIDGE, bd=2)
+        group_frame.pack(pady=20, padx=30, fill=tk.X)
+        
+        group_title = tk.Label(
+            group_frame,
+            text="👥 Group Members",
+            font=("Arial", 13, "bold"),
+            bg=COLORS["bg_medium"],
+            fg="#FFD700"
+        )
+        group_title.pack(pady=(10, 5))
+        
+        members_text = tk.Label(
+            group_frame,
+            text="""Bangcasan, Angel Grace — Recursion
+Basco, Kris Rainiell — Binary Tree & Binary Search
+Mercado, Lorens Aron D. — Queue and Stack
+Nuyda, Karen — Recursion""",
+            font=("Arial", 11),
+            bg=COLORS["bg_medium"],
+            fg=COLORS["text_primary"],
+            justify=tk.CENTER
+        )
+        members_text.pack(pady=(5, 10))
+        
+        # Menu frame with elevated surface
+        menu_frame = tk.Frame(main_frame, bg=COLORS["bg_medium"], relief=tk.FLAT, bd=0)
+        menu_frame.pack(pady=20, padx=50, fill=tk.X)
+        menu_frame.configure(highlightbackground=COLORS["bg_light"], highlightthickness=1)
+        
+        # Dropdown menu label
+        tk.Label(menu_frame, text="Choose Option:", font=("Arial", 13, "bold"),
+                bg=COLORS["bg_medium"], fg=COLORS["text_primary"]).pack(side=tk.LEFT, padx=15, pady=15)
+        
+        self.menu_var = tk.StringVar(value="Select an Option")
+        options = [
+            "Binary Tree",
+            "Binary Search Tree",
+            "Stack",
+            "Queue",
+            "Factorial Recursion",
+            "Fibonacci Sequence",
+            "Tower of Hanoi"
+        ]
+        
+        if USE_CTK:
+            menu = ctk.CTkOptionMenu(
+                menu_frame,
+                values=options,
+                variable=self.menu_var,
+                command=self.launch_module,
+                font=("Arial", 14),
+                width=300
+            )
+        else:
+            menu = ttk.Combobox(
+                menu_frame,
+                textvariable=self.menu_var,
+                values=options,
+                state="readonly",
+                font=("Arial", 12),
+                width=30
+            )
+            menu.bind("<<ComboboxSelected>>", lambda e: self.launch_module(self.menu_var.get()))
+        
+        menu.pack(side=tk.LEFT, padx=15, pady=15)
+        
+        # Launch button with modern styling and hover effects
+        if USE_CTK:
+            launch_btn = ctk.CTkButton(
+                menu_frame,
+                text="🚀 Launch",
+                command=lambda: self.launch_module(self.menu_var.get()),
+                font=("Arial", 13, "bold"),
+                width=100,
+                fg_color=COLORS["accent_primary"],
+                hover_color="#9B66DC"
+            )
+        else:
+            launch_btn = tk.Button(
+                menu_frame,
+                text="🚀 Launch",
+                command=lambda: self.launch_module(self.menu_var.get()),
+                font=("Arial", 12, "bold"),
+                bg=COLORS["accent_primary"],
+                fg=COLORS["bg_dark"],
+                padx=20,
+                pady=8,
+                relief=tk.FLAT,
+                cursor="hand2",
+                activebackground="#9B66DC",
+                activeforeground=COLORS["bg_dark"]
+            )
+        launch_btn.pack(side=tk.LEFT, padx=12, pady=15)
+        
+        # Info panel with elevated background and better text contrast
+        info_frame = tk.Frame(main_frame, bg=COLORS["bg_medium"], relief=tk.FLAT, bd=0)
+        info_frame.pack(pady=30, padx=50, fill=tk.BOTH, expand=True)
+        info_frame.configure(highlightbackground=COLORS["bg_light"], highlightthickness=1)
+        
+        if USE_CTK:
+            info_title = ctk.CTkLabel(
+                info_frame,
+                text="📚 Available Modules",
+                font=("Arial", 15, "bold"),
+                text_color=COLORS["accent_primary"]
+            )
+        else:
+            info_title = tk.Label(
+                info_frame,
+                text="📚 Available Modules",
+                font=("Arial", 15, "bold"),
+                bg=COLORS["bg_medium"],
+                fg=COLORS["accent_primary"]
+            )
+        info_title.pack(pady=12)
+        
+        info_text = tk.Text(
+            info_frame,
+            height=14,
+            width=80,
+            bg=COLORS["bg_light"],
+            fg=COLORS["text_primary"],
+            font=("Courier", 10),
+            state=tk.DISABLED,
+            insertbackground=COLORS["accent_primary"]
+        )
+        info_text.pack(padx=12, pady=10)
+
+        # Add info
+        info_text.config(state=tk.NORMAL)
+        info_text.insert(tk.END, """
+  1. STACK (LIFO - Last In First Out)
+      - Push and pop operations with visual animation
+      - Parking Garage LIFO simulation
+      - Demonstrates real-world stack applications
+
+  2. QUEUE (FIFO - First In First Out)
+      - Enqueue and dequeue operations with visualization
+      - Parking Game FIFO simulation
+      - Shows sequential process management
+
+  3. BINARY TREE
+      - Insert, delete, and search nodes
+      - All three traversal methods (Preorder/TLR, Inorder/LTR, Postorder/LRT)
+      - Real-time tree visualization and analysis
+
+  4. BINARY SEARCH TREE (BST)
+      - Maintains BST property during insertions/deletions
+      - Efficient searching and automatic balancing
+      - Ordered tree traversal and analysis
+
+  5. FACTORIAL RECURSION
+      - Visualizes recursive calls with animated call stack
+      - Shows recursion depth and function parameters
+      - Step-by-step execution with detailed explanation
+
+  6. FIBONACCI SEQUENCE
+      - Generates and displays Fibonacci numbers dynamically
+      - Visual bar chart representation of sequence
+      - Animated term-by-term calculation with formula display
+
+  7. TOWER OF HANOI
+      - Classic recursive problem with disk movement animation
+      - Visual representation of all three pegs
+      - Move counter and solution tracking (2^n - 1 moves)
+        """)
+        info_text.config(state=tk.DISABLED)
+    
+    def launch_module(self, module_name):
+        """Launch the selected DSA module"""
+        if module_name == "Select an Option":
+            messagebox.showwarning("Warning", "Please select a module to launch!")
+            return
+        
+        try:
+            if module_name == "Binary Tree":
+                self.launch_tree_visualizer("Binary Tree")
+            elif module_name == "Binary Search Tree":
+                self.launch_tree_visualizer("Binary Search Tree")
+            elif module_name == "Stack":
+                self.launch_stack()
+            elif module_name == "Queue":
+                self.launch_queue()
+            elif module_name == "Factorial Recursion":
+                self.launch_factorial()
+            elif module_name == "Fibonacci Sequence":
+                self.launch_fibonacci()
+            elif module_name == "Tower of Hanoi":
+                self.launch_hanoi()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to launch: {str(e)}")
+
+    def _import_class_from_candidates(self, dir_candidates, module_filename, class_name):
+        """Import a class from the first matching directory using sys.path import.
+
+        This approach ensures that relative imports inside the target module
+        (e.g., `from .stack_logic import ...` or `from stack_logic import ...`)
+        work by temporarily adding the target directory to `sys.path` before import.
+        """
+        base_dir = os.path.dirname(__file__)
+        mod_name = module_filename[:-3]  # strip .py -> e.g., 'queue_ui'
+        last_error = None
+        for d in dir_candidates:
+            dir_path = os.path.join(base_dir, d)
+            candidate_path = os.path.join(dir_path, module_filename)
+            if os.path.isfile(candidate_path):
+                # Ensure directory is on sys.path for direct module import
+                added = False
+                if dir_path not in sys.path:
+                    sys.path.insert(0, dir_path)
+                    added = True
+                try:
+                    # Preload peer logic module to satisfy absolute imports inside the UI module
+                    logic_map = {
+                        'stack_ui.py': 'stack_logic.py',
+                        'queue_ui.py': 'queue_logic.py'
+                    }
+                    logic_filename = logic_map.get(module_filename)
+                    if logic_filename:
+                        logic_path = os.path.join(dir_path, logic_filename)
+                        if os.path.isfile(logic_path):
+                            logic_modname = logic_filename[:-3]
+                            if logic_modname not in sys.modules:
+                                spec_logic = importlib.util.spec_from_file_location(logic_modname, logic_path)
+                                mod_logic = importlib.util.module_from_spec(spec_logic)
+                                spec_logic.loader.exec_module(mod_logic)
+                                sys.modules[logic_modname] = mod_logic
+                    module = importlib.import_module(mod_name)
+                    return getattr(module, class_name)
+                except Exception as e:
+                    last_error = e
+                finally:
+                    # Keep sys.path entry to allow sub-imports later (safe for this app)
+                    # If needed, we could remove it by:
+                    # if added: sys.path.remove(dir_path)
+                    pass
+        if last_error:
+            raise ImportError(f"Failed loading {class_name} from candidates {dir_candidates}: {last_error}")
+        raise ImportError(f"No module file '{module_filename}' found in {dir_candidates}")
+    
+    def launch_tree_visualizer(self, tree_type):
+        """Launch the tree visualizer"""
+        if self.module_window:
+            try:
+                self.module_window.destroy()
+            except:
+                pass
+        
+        self.module_window = tk.Toplevel(self.root)
+        self.module_window.geometry("1200x800")
+        self.module_window.title(f"{tree_type} Visualizer")
+        
+        app = TreeVisualizer(self.module_window)
+        app.tree_type = tree_type
+        if tree_type == "Binary Search Tree":
+            app.tree = BinarySearchTree()
+        else:
+            app.tree = BinaryTree()
+    
+    def launch_stack(self):
+        """Launch stack visualizer"""
+        if self.module_window:
+            try:
+                self.module_window.destroy()
+            except:
+                pass
+        
+        self.module_window = tk.Toplevel(self.root)
+        self.module_window.geometry("680x760")
+        self.module_window.title("Parking Garage - Stack")
+        
+        try:
+            StackUI = self._import_class_from_candidates([
+                'my_stack', 'stack'
+            ], 'stack_ui.py', 'StackUI')
+            app = StackUI(self.module_window, max_size=5)
+            app.pack(fill="both", expand=True, padx=12, pady=12)
+        except ImportError as e:
+            messagebox.showerror("Error", f"Could not load Stack: {str(e)}")
+    
+    def launch_queue(self):
+        """Launch queue visualizer"""
+        if self.module_window:
+            try:
+                self.module_window.destroy()
+            except:
+                pass
+        
+        self.module_window = tk.Toplevel(self.root)
+        self.module_window.geometry("1200x680")
+        self.module_window.title("Parking Game - Queue")
+        
+        try:
+            QueueUI = self._import_class_from_candidates([
+                'my_queue', 'queue'
+            ], 'queue_ui.py', 'QueueUI')
+            app = QueueUI(self.module_window, max_size=10)
+            app.pack(fill="both", expand=True, padx=12, pady=12)
+        except ImportError as e:
+            messagebox.showerror("Error", f"Could not load Queue: {str(e)}")
+    
+    def launch_factorial(self):
+        """Launch factorial recursion visualizer"""
+        if self.module_window:
+            try:
+                self.module_window.destroy()
+            except:
+                pass
+        
+        self.module_window = tk.Toplevel(self.root)
+        self.module_window.geometry("1200x800")
+        self.module_window.title("Factorial Recursion Visualizer")
+        
+        try:
+            from recursion.factorial import FactorialVisualizer
+            app = FactorialVisualizer(self.module_window)
+        except ImportError as e:
+            messagebox.showerror("Error", f"Could not load Factorial: {str(e)}")
+    
+    def launch_fibonacci(self):
+        """Launch Fibonacci sequence visualizer"""
+        if self.module_window:
+            try:
+                self.module_window.destroy()
+            except:
+                pass
+        
+        self.module_window = tk.Toplevel(self.root)
+        self.module_window.geometry("1400x850")
+        self.module_window.title("Fibonacci Sequence Visualizer")
+        
+        try:
+            from recursion.fibonacci import FibonacciVisualizer
+            app = FibonacciVisualizer(self.module_window)
+        except ImportError as e:
+            messagebox.showerror("Error", f"Could not load Fibonacci: {str(e)}")
+    
+    def launch_hanoi(self):
+        """Launch Tower of Hanoi visualizer"""
+        if self.module_window:
+            try:
+                self.module_window.destroy()
+            except:
+                pass
+        
+        self.module_window = tk.Toplevel(self.root)
+        self.module_window.geometry("900x800")
+        self.module_window.title("Tower of Hanoi Visualizer")
+        
+        try:
+            from recursion.hanoi import TowerOfHanoi
+            app = TowerOfHanoi(self.module_window, num_disks=5)
+        except ImportError as e:
+            messagebox.showerror("Error", f"Could not load Tower of Hanoi: {str(e)}")
+
+
 def main():
     """Main function to run the application"""
     if USE_CTK:
         root = ctk.CTk()
     else:
         root = tk.Tk()
-    app = TreeVisualizer(root)
+    app = DSAMainMenu(root)
     root.mainloop()
 
 
